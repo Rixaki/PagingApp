@@ -2,123 +2,121 @@ package ru.netology.nmedia.repository
 
 import androidx.paging.ExperimentalPagingApi
 import androidx.paging.LoadType
+import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import androidx.paging.RemoteMediator
 import androidx.room.withTransaction
-import retrofit2.HttpException
 import ru.netology.nmedia.api.ApiService
+import ru.netology.nmedia.dao.PostDao
+import ru.netology.nmedia.dao.PostRemoteKeyDao
 import ru.netology.nmedia.db.AppDb
-import ru.netology.nmedia.entity.RemoteKey
 import ru.netology.nmedia.dto.Post
 import ru.netology.nmedia.entity.PostEntity
+import ru.netology.nmedia.entity.PostRemoteKeyEntity
 import ru.netology.nmedia.error.ApiError
-import java.io.IOException
+import java.lang.Long.max
+import java.lang.Long.min
 
-//https://www.youtube.com/watch?v=EpcIjXgg3e4&list=PLbg6Nd4MUHGICER-qVejk-0knCCWLbqp5&index=11
-@ExperimentalPagingApi
-class PostRemoteMediator(
-    private val apiService: ApiService,
-    private val appDb: AppDb
-) : RemoteMediator<Int, Post>(){
-    override suspend fun initialize(): InitializeAction {
-        return InitializeAction.LAUNCH_INITIAL_REFRESH
-    }
+const val STARTING_PAGE_INDEX = 1
+
+@OptIn(ExperimentalPagingApi::class)
+class PostRemoteMediator (
+    private val service: ApiService,
+    private val postDao: PostDao,
+    private val postRemoteKeyDao: PostRemoteKeyDao,
+    private val appDb: AppDb,
+) : RemoteMediator<Int, PostEntity>() {
+    override suspend fun initialize(): InitializeAction =
+        if (postDao.isEmpty()) {
+            println("LAUNCH_INITIAL_REFRESH")
+            InitializeAction.LAUNCH_INITIAL_REFRESH
+        } else {
+            println("SKIP_INITIAL_REFRESH")
+            InitializeAction.SKIP_INITIAL_REFRESH
+        }
 
     override suspend fun load(
         loadType: LoadType,
-        state: PagingState<Int, Post>
+        state: PagingState<Int, PostEntity>
     ): MediatorResult {
-        val page = when (val pageKeyData = getKeyPageData(loadType, state)) {
-            //getKeyPageData - MediatorSuccess or Int?
-            is MediatorResult.Success -> {
-                return pageKeyData
-            }
-            else -> {
-                pageKeyData as Int
-            }
-        }
-
         try {
-            val response = apiService.getAll()
-            /*
+            val response = when (loadType) {
+                LoadType.REFRESH -> {
+                    service.getLatest(state.config.pageSize)
+                }
+                LoadType.PREPEND -> {
+                    return MediatorResult.Success(endOfPaginationReached = true)
+                }
+                LoadType.APPEND -> {
+                    val firstId = postRemoteKeyDao.min()
+                        ?: return MediatorResult.Success(false)
+                    service.getBefore(
+                        firstId,
+                        state.config.pageSize
+                    )
+                }
+            }
+
             if (!response.isSuccessful) {
                 throw ApiError(response.code(), response.message())
             }
-             */
-
             val body = response.body() ?: throw ApiError(
                 response.code(),
-                response.message()
+                response.message(),
             )
-            val postsEnt = body.map {
-                PostEntity.fromDto(it)
-            }
-            appDb.postDao().insert(postsEnt)
+            println ("responce body id-s range: ${body.firstOrNull()?.id} and" +
+                    " ${body.lastOrNull()?.id}")
 
-            val isEndOfList = body.isEmpty()
-            appDb.withTransaction {//coroutine block
-                if (loadType == LoadType.REFRESH) {
-                    appDb.postDao().deleteAll()
-                    appDb.keysDao().deleteAll()
+            appDb.withTransaction {//all changes postdao+keysDao or prev state
+                when (loadType) {
+                    LoadType.REFRESH -> {
+                        println("trans refresh")
+                        //postDao.clear()//lecture version
+                        postRemoteKeyDao.insert(
+                            listOf(
+                                PostRemoteKeyEntity(
+                                    PostRemoteKeyEntity.KeyType.AFTER,
+                                    max(body.first().id, postDao.max() ?: body.first().id)
+                                ),
+                                PostRemoteKeyEntity(
+                                    PostRemoteKeyEntity.KeyType.BEFORE,
+                                    min(body.last().id, postDao.min() ?: body.last().id)
+                                )
+                            )
+                        )
+                    }
+
+                    //UNREACHABLE WITHOUT AUTO_PREPEND
+                    LoadType.PREPEND -> {
+                        println("trans prepend")
+                        postRemoteKeyDao.insert(
+                            PostRemoteKeyEntity(
+                                PostRemoteKeyEntity.KeyType.AFTER,
+                                body.first().id
+                            )
+                        )
+                        println("inserting key id: ${body.first().id}")
+                    }
+
+                    LoadType.APPEND -> {
+                        println("trans append")
+                        postRemoteKeyDao.insert(
+                            PostRemoteKeyEntity(
+                                PostRemoteKeyEntity.KeyType.BEFORE,
+                                body.last().id//maybe NoSuchElementException:List is empty.
+                            )
+                        )
+                        println("inserting key id: ${body.last().id}")
+                    }
                 }
-                val prevKey = if (page == STARTING_PAGE_INDEX) null else page - 1
-                val nextKey = if (isEndOfList) null else page + 1
-                val keys = body.map {
-                    RemoteKey(it.id, prevKey = prevKey, nextKey = nextKey)
-                }
-                appDb.keysDao().insertAll(keys)
-                appDb.postDao().insert(postsEnt)
+
+                postDao.insert(body.map(PostEntity::fromDto))
             }
-            return MediatorResult.Success(endOfPaginationReached = isEndOfList)
-        } catch (exception: IOException) {
-            return MediatorResult.Error(exception)
-        } catch (exception: HttpException) {
-            return MediatorResult.Error(exception)
+
+            return MediatorResult.Success(endOfPaginationReached = body.isEmpty())
+        } catch (e: Exception) {
+            println("ERROR: ${e.message}")
+            return MediatorResult.Error(e)
         }
     }
-
-    private suspend fun getKeyPageData(
-        loadType: LoadType,
-        state: PagingState<Int, Post>
-    ): Any {
-        return when (loadType) {
-            LoadType.REFRESH -> {
-                val remoteKeys = getRemoteKeyClosestToCurrentPosition(state)
-                remoteKeys?.nextKey?.minus(1) ?: STARTING_PAGE_INDEX
-            }
-            LoadType.APPEND -> {
-                val remoteKeys = getLastRemoteKey(state)
-                val nextKey = remoteKeys?.nextKey
-                return nextKey ?: MediatorResult.Success(endOfPaginationReached = false)
-            }
-            LoadType.PREPEND -> {
-                val remoteKeys = getFirstRemoteKey(state)
-                val prevKey = remoteKeys?.prevKey ?: return MediatorResult.Success(
-                    endOfPaginationReached = false
-                )
-                prevKey
-            }
-        }
-    }
-
-    private suspend fun getRemoteKeyClosestToCurrentPosition(
-        state: PagingState<Int, Post>): RemoteKey? = state.anchorPosition?.let { position ->
-        state.closestItemToPosition(position)?.id?.let { postId ->
-            appDb.keysDao().remoteKeysPostId(postId)
-        }
-    }
-
-    private suspend fun getLastRemoteKey(state: PagingState<Int, Post>):
-            RemoteKey? {
-        return state.pages
-            .lastOrNull { it.data.isNotEmpty() }
-            ?.data?.lastOrNull()
-            ?.let { post -> appDb.keysDao().remoteKeysPostId(post.id) }
-    }
-
-    private suspend fun getFirstRemoteKey(state: PagingState<Int, Post>):
-            RemoteKey? = state.pages
-            .firstOrNull { it.data.isNotEmpty() }
-            ?.data?.firstOrNull()
-            ?.let { post -> appDb.keysDao().remoteKeysPostId(post.id) }
 }

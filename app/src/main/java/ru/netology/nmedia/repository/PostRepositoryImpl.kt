@@ -4,21 +4,26 @@ import androidx.paging.ExperimentalPagingApi
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.paging.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import ru.netology.nmedia.api.ApiService
+import ru.netology.nmedia.dao.PostDao
+import ru.netology.nmedia.dao.PostRemoteKeyDao
 import ru.netology.nmedia.db.AppDb
 import ru.netology.nmedia.dto.Attachment
 import ru.netology.nmedia.dto.Media
 import ru.netology.nmedia.dto.MediaUpload
 import ru.netology.nmedia.dto.Post
 import ru.netology.nmedia.entity.PostEntity
+import ru.netology.nmedia.entity.PostRemoteKeyEntity
 import ru.netology.nmedia.entity.toEntity
 import ru.netology.nmedia.enumeration.AttachmentType
 import ru.netology.nmedia.error.ApiError
@@ -31,33 +36,27 @@ import javax.inject.Singleton
 
 @Singleton
 class PostRepositoryImpl @Inject constructor(
-    private val appDb: AppDb,
+    private val postDao: PostDao,
     private val apiService: ApiService,
+    private val postRemoteKeyDao: PostRemoteKeyDao,
+    private val appDb: AppDb,
 ) : PostRepository {
 
-    override val apiData: Flow<PagingData<Post>> = Pager(
-        config = PagingConfig(pageSize = 5, enablePlaceholders = false),
-        pagingSourceFactory = { PostPagingSource(apiService) },
-    ).flow
-
-    override val dbData: Flow<PagingData<Post>> = Pager(
-            config = PagingConfig(pageSize = 5, enablePlaceholders = false),
-            pagingSourceFactory = { appDb.postDao().getAllPaging() },
-        ).flow
-
-    @ExperimentalPagingApi//show error without it
-    override val mediatorData: Flow<PagingData<Post>> = Pager(
+    @OptIn(ExperimentalPagingApi::class)
+    override val data: Flow<PagingData<Post>> = Pager(
         config = PagingConfig(
             pageSize = 5,
-            maxSize = 30,
-            enablePlaceholders = false),
+            enablePlaceholders = false,
+            prefetchDistance = 1
+        ),
+        pagingSourceFactory = { postDao.pagingSource() },
         remoteMediator = PostRemoteMediator(
+            service = apiService,
+            postDao = postDao,
+            postRemoteKeyDao = postRemoteKeyDao,
             appDb = appDb,
-            apiService = apiService),
-        pagingSourceFactory = { appDb.postDao().getAllPaging() }
-    ).flow
-
-    override suspend fun deletePosts() = appDb.postDao().deleteAll()
+        )
+    ).flow.map { it.map(PostEntity::toDto) }
 
     override suspend fun getAll() {
         try {
@@ -67,7 +66,7 @@ class PostRepositoryImpl @Inject constructor(
             }
 
             val body = response.body() ?: throw ApiError(response.code(), response.message())
-            appDb.postDao().insert(body.toEntity())
+            postDao.insert(body.toEntity())
         } catch (e: IOException) {
             throw NetworkError
         } catch (e: Exception) {
@@ -84,7 +83,7 @@ class PostRepositoryImpl @Inject constructor(
             }
 
             val body = response.body() ?: throw ApiError(response.code(), response.message())
-            appDb.postDao().insert(body.toEntity())
+            postDao.insert(body.toEntity())
             emit(body.size)
         }
     }
@@ -105,7 +104,7 @@ class PostRepositoryImpl @Inject constructor(
             }
 
             val body = response.body() ?: throw ApiError(response.code(), response.message())
-            appDb.postDao().insert(PostEntity.fromDto(body))
+            postDao.insert(PostEntity.fromDto(body))
         } catch (e: IOException) {
             throw NetworkError
         } catch (e: Exception) {

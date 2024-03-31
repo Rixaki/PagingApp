@@ -40,7 +40,7 @@ class PostViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val cached = repository
-        .mediatorData
+        .data
         .cachedIn(viewModelScope)
 
     val data: Flow<PagingData<Post>> = auth.authStateFlow

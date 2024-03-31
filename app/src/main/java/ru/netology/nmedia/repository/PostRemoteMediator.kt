@@ -95,7 +95,6 @@ class PostRemoteMediator (
                                 body.first().id
                             )
                         )
-                        println("inserting key id: ${body.first().id}")
                     }
 
                     LoadType.APPEND -> {
@@ -106,7 +105,6 @@ class PostRemoteMediator (
                                 body.last().id//maybe NoSuchElementException:List is empty.
                             )
                         )
-                        println("inserting key id: ${body.last().id}")
                     }
                 }
 

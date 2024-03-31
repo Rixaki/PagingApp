@@ -113,7 +113,7 @@ class PostRemoteMediator (
 
             return MediatorResult.Success(endOfPaginationReached = body.isEmpty())
         } catch (e: Exception) {
-            println("ERROR: ${e.message}")
+            println("ERROR MESSAGE: ${e.message}")
             return MediatorResult.Error(e)
         }
     }

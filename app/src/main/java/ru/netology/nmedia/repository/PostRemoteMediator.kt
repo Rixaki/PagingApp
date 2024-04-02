@@ -42,7 +42,16 @@ class PostRemoteMediator (
         try {
             val response = when (loadType) {
                 LoadType.REFRESH -> {
-                    service.getLatest(state.config.pageSize)
+                    if (postDao.isEmpty()) {
+                        service.getLatest(state.config.pageSize)
+                    } else {
+                        val lastId = postRemoteKeyDao.max()
+                            ?: return MediatorResult.Success(false)
+                        service.getAfter(
+                            lastId,
+                            state.config.pageSize
+                        )
+                    }
                 }
                 LoadType.PREPEND -> {
                     return MediatorResult.Success(endOfPaginationReached = true)
@@ -64,8 +73,15 @@ class PostRemoteMediator (
                 response.code(),
                 response.message(),
             )
-            println ("responce body id-s range: ${body.firstOrNull()?.id} and" +
-                    " ${body.lastOrNull()?.id}")
+            if (body.isEmpty()) {
+                println("empty response body")
+                return MediatorResult.Success(endOfPaginationReached = true)
+            } else {
+                println(
+                    "response body id-s range: ${body.firstOrNull()?.id} and" +
+                            " ${body.lastOrNull()?.id}"
+                )
+            }
 
             appDb.withTransaction {//all changes postdao+keysDao or prev state
                 when (loadType) {
@@ -111,7 +127,9 @@ class PostRemoteMediator (
                 postDao.insert(body.map(PostEntity::fromDto))
             }
 
-            return MediatorResult.Success(endOfPaginationReached = body.isEmpty())
+            //return MediatorResult.Success(endOfPaginationReached = body.isEmpty())
+            //reachable with only non-empty body
+            return MediatorResult.Success(endOfPaginationReached = false)
         } catch (e: Exception) {
             println("ERROR MESSAGE: ${e.message}")
             return MediatorResult.Error(e)

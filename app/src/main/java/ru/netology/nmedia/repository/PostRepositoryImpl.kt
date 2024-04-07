@@ -1,9 +1,11 @@
 package ru.netology.nmedia.repository
 
+import android.os.Build
 import androidx.paging.ExperimentalPagingApi
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.paging.insertSeparators
 import androidx.paging.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -18,10 +20,14 @@ import ru.netology.nmedia.api.ApiService
 import ru.netology.nmedia.dao.PostDao
 import ru.netology.nmedia.dao.PostRemoteKeyDao
 import ru.netology.nmedia.db.AppDb
+import ru.netology.nmedia.dto.Ad
 import ru.netology.nmedia.dto.Attachment
+import ru.netology.nmedia.dto.FeedItem
 import ru.netology.nmedia.dto.Media
 import ru.netology.nmedia.dto.MediaUpload
 import ru.netology.nmedia.dto.Post
+import ru.netology.nmedia.dto.TimeHeader
+import ru.netology.nmedia.dto.TimeType
 import ru.netology.nmedia.entity.PostEntity
 import ru.netology.nmedia.entity.PostRemoteKeyEntity
 import ru.netology.nmedia.entity.toEntity
@@ -31,8 +37,16 @@ import ru.netology.nmedia.error.AppError
 import ru.netology.nmedia.error.NetworkError
 import ru.netology.nmedia.error.UnknownError
 import java.io.IOException
+import java.lang.NullPointerException
+import java.time.Instant
+import java.time.LocalDateTime
+import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.random.Random
+
+const val TODAY_COUNT : Long = 24 * 60 * 60
+const val WEEK_COUNT : Long = 48 * 60 * 60
 
 @Singleton
 class PostRepositoryImpl @Inject constructor(
@@ -43,7 +57,7 @@ class PostRepositoryImpl @Inject constructor(
 ) : PostRepository {
 
     @OptIn(ExperimentalPagingApi::class)
-    override val data: Flow<PagingData<Post>> = Pager(
+    override val data: Flow<PagingData<FeedItem>> = Pager(
         config = PagingConfig(
             pageSize = 5,
             enablePlaceholders = false,
@@ -56,7 +70,49 @@ class PostRepositoryImpl @Inject constructor(
             postRemoteKeyDao = postRemoteKeyDao,
             appDb = appDb,
         )
-    ).flow.map { it.map(PostEntity::toDto) }
+    ).flow.map { pagingData ->
+        pagingData.map(PostEntity::toDto)
+            //TimeHeader adding
+            .insertSeparators { after: Post?, before: Post? ->
+                if (after == null) {
+                    return@insertSeparators TimeHeader(id = 0L, type =
+                    TimeType.TODAY)
+                }
+                val curTime = System.currentTimeMillis()/1000
+                // old analog of Instant.now().epochSecond
+                try {
+                    val firstTime = before?.published!!//NPE throwable
+                    val secondTime = after?.published!!//NPE throwable
+                    //println("1st t: ${firstTime}, 2st t: ${secondTime},
+                    // cur: " + "$curTime")
+                    if ((curTime - firstTime < TODAY_COUNT)
+                        &&
+                        (curTime - secondTime >= TODAY_COUNT)) {
+                        return@insertSeparators TimeHeader(id = 0L, type =
+                        TimeType.YESTERDAY)
+                    } else {
+                        if ((curTime - firstTime < WEEK_COUNT)
+                            &&
+                            (curTime - secondTime >= WEEK_COUNT)) {
+                            return@insertSeparators TimeHeader(id = 0L, type =
+                            TimeType.LAST_WEEK)
+                        } else {
+                            return@insertSeparators null
+                        }
+                    }
+                } catch (e: NullPointerException) {
+                    return@insertSeparators null
+                }
+            }
+            //AD adding
+            .insertSeparators { before: FeedItem?, _ ->
+                if (before?.id?.rem(5) == 0L && before !is TimeHeader) {
+                    return@insertSeparators Ad(0L, "figma.jpg")
+                } else {
+                    return@insertSeparators null
+            }
+            }
+    }
 
     override suspend fun getAll() {
         try {

@@ -13,15 +13,22 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.paging.LoadState
+import androidx.paging.LoadType
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import ru.netology.nmedia.R
 import ru.netology.nmedia.adapter.OnInteractionListener
+import ru.netology.nmedia.adapter.PostLoadStateAdapter
+import ru.netology.nmedia.adapter.PostLoadingViewHolder
 import ru.netology.nmedia.adapter.PostsAdapter
 import ru.netology.nmedia.auth.AppAuth
 import ru.netology.nmedia.databinding.FragmentFeedBinding
 import ru.netology.nmedia.dto.Post
+import ru.netology.nmedia.repository.RemotePresentationState
+import ru.netology.nmedia.repository.asRemotePresentationState
 import ru.netology.nmedia.viewmodel.AuthViewModel
 import ru.netology.nmedia.viewmodel.PostViewModel
 import javax.inject.Inject
@@ -63,11 +70,34 @@ class FeedFragment : Fragment() {
                 startActivity(shareIntent)
             }
         })
-        binding.list.adapter = adapter
 
-        // TODO: HOMEWORK - REFRESH AFTER SIGN IN/OUT
-        authModel.data.observe(viewLifecycleOwner) {
-            adapter.refresh()
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                adapter.loadStateFlow.collectLatest { state ->
+                    if (state.refresh is LoadState.Loading) {
+                        binding.list.adapter =
+                            adapter.withLoadStateHeaderAndFooter(
+                                header = PostLoadStateAdapter(adapter::refresh),
+                                footer = PostLoadStateAdapter(adapter::refresh)
+                            )
+                    } else if (state.prepend is LoadState.Loading) {
+                        binding.list.adapter =
+                            adapter.withLoadStateHeader(
+                                header = PostLoadStateAdapter(adapter::refresh),
+                            )
+                    }   else if (state.append is LoadState.Loading)   {
+                        adapter.withLoadStateFooter(
+                            footer = PostLoadStateAdapter(adapter::refresh)
+                        )
+                    } else {
+                        binding.list.adapter =
+                            adapter.withLoadStateHeaderAndFooter(
+                                header = PostLoadStateAdapter(adapter::refresh),
+                                footer = PostLoadStateAdapter(adapter::refresh)
+                            )
+                    }
+                }
+            }
         }
 
 

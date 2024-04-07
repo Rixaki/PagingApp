@@ -1,6 +1,7 @@
 package ru.netology.nmedia.repository
 
 import androidx.paging.ExperimentalPagingApi
+import androidx.paging.LoadState
 import androidx.paging.LoadType
 import androidx.paging.PagingSource
 import androidx.paging.PagingState

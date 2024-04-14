@@ -30,4 +30,7 @@
     <string name="sign_up">Регистрация</string>
     <string name="sign_out">Выход</string>
     <string name="test_text">Тестовый текст</string>
+    <string name="today">СЕГОДНЯ</string>
+    <string name="yesterday">ВЧЕРА</string>
+    <string name="last_week">НА ПРОШЛОЙ НЕДЕЛЕ</string>
 </resources>

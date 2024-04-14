@@ -71,7 +71,8 @@ class PostRepositoryImpl @Inject constructor(
             appDb = appDb,
         )
     ).flow.map { pagingData ->
-        pagingData.map(PostEntity::toDto)
+        pagingData
+            .map(PostEntity::toDto)
             //TimeHeader adding
             .insertSeparators { after: Post?, before: Post? ->
                 if (after == null) {

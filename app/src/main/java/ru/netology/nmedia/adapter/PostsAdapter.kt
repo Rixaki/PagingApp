@@ -16,6 +16,7 @@ import ru.netology.nmedia.dto.Ad
 import ru.netology.nmedia.dto.FeedItem
 import ru.netology.nmedia.dto.Post
 import ru.netology.nmedia.dto.TimeHeader
+import ru.netology.nmedia.dto.TimeType.*
 import ru.netology.nmedia.view.load
 import ru.netology.nmedia.view.loadCircleCrop
 
@@ -81,7 +82,13 @@ class TimeHeaderViewHolder(
     private val binding:CardTimeHeaderBinding
 ) : RecyclerView.ViewHolder(binding.root) {
     fun bind (timeHeader: TimeHeader) {
-        binding.title.text = timeHeader.title
+        binding.title.setText(
+            when (timeHeader.type) {
+                TODAY -> R.string.today
+                YESTERDAY -> R.string.yesterday
+                LAST_WEEK -> R.string.last_week
+            }
+        )
     }
 }
 

@@ -32,12 +32,12 @@ data class Ad(
 data class TimeHeader(
     override val id: Long,
     val type: TimeType,
-    val title: String = type.title
+    val title: String = "SOME TIME AGO"
 ) : FeedItem
 
-enum class TimeType(val title: String) {
-    TODAY("Today"),
-    YESTERDAY("Yesterday"),
-    LAST_WEEK("Last week"),
+enum class TimeType() {
+    TODAY,
+    YESTERDAY,
+    LAST_WEEK,
 }
 

@@ -27,6 +27,7 @@ import ru.netology.nmedia.adapter.PostsAdapter
 import ru.netology.nmedia.auth.AppAuth
 import ru.netology.nmedia.databinding.FragmentFeedBinding
 import ru.netology.nmedia.dto.Post
+import ru.netology.nmedia.dto.TimeHeader
 import ru.netology.nmedia.repository.RemotePresentationState
 import ru.netology.nmedia.repository.asRemotePresentationState
 import ru.netology.nmedia.viewmodel.AuthViewModel
@@ -71,34 +72,10 @@ class FeedFragment : Fragment() {
             }
         })
 
-        viewLifecycleOwner.lifecycleScope.launch {
-            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                adapter.loadStateFlow.collectLatest { state ->
-                    if (state.refresh is LoadState.Loading) {
-                        binding.list.adapter =
-                            adapter.withLoadStateHeaderAndFooter(
-                                header = PostLoadStateAdapter(adapter::refresh),
-                                footer = PostLoadStateAdapter(adapter::refresh)
-                            )
-                    } else if (state.prepend is LoadState.Loading) {
-                        binding.list.adapter =
-                            adapter.withLoadStateHeader(
-                                header = PostLoadStateAdapter(adapter::refresh),
-                            )
-                    }   else if (state.append is LoadState.Loading)   {
-                        adapter.withLoadStateFooter(
-                            footer = PostLoadStateAdapter(adapter::refresh)
-                        )
-                    } else {
-                        binding.list.adapter =
-                            adapter.withLoadStateHeaderAndFooter(
-                                header = PostLoadStateAdapter(adapter::refresh),
-                                footer = PostLoadStateAdapter(adapter::refresh)
-                            )
-                    }
-                }
-            }
-        }
+        binding.list.adapter = adapter.withLoadStateHeaderAndFooter(
+            header = PostLoadStateAdapter(adapter::refresh),
+            footer = PostLoadStateAdapter(adapter::refresh)
+        )
 
 
         // Устаревший вариант
@@ -132,9 +109,8 @@ class FeedFragment : Fragment() {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 adapter.loadStateFlow.collectLatest { state ->
                     binding.swiperefresh.isRefreshing =
-                        state.refresh is LoadState.Loading ||
-                                state.prepend is LoadState.Loading ||
-                                state.append is LoadState.Loading
+                        state.refresh is LoadState.Loading
+
                 }
             }
         }
